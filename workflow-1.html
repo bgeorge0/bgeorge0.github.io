@@ -39,7 +39,7 @@
  }
  function diagram(){
  const panel=$("wfDiagram");if(!panel)return;
- const map={max:current().id==="start"?"max":"repeat",oar:"oar",oarAction:"limit",high:"high",highAction:"oaredit",editOar:"optimise",editTarget:"optimise",whole:"whole",wholeAction:"targetedit",limitedSpatial:"spatial",spatial:"spatial",intent:"intent",rename:"rename",done:completed==="candidate"?"rename":"review"};
+ const map={max:current().id==="start"?"max":"repeat",oar:"oar",oarAction:"limit",high:"high",highAction:"oaredit",editOar:"optimise",editTarget:"optimise",whole:"whole",wholeAction:"targetedit",limitedSpatial:"review",intent:"intent",rename:"rename",done:completed==="candidate"?"rename":"review"};
  const active=map[phase()],visited=new Set(route.map(e=>e.phase==="max"?(e.id==="start"?"max":"repeat"):map[e.phase]));
  const nodes=[
  ["max",10,12,208,58,"box",["Operator 1","Normalise to maximum dose"],"green"],
@@ -51,10 +51,9 @@
  ["whole",10,323,208,92,"diamond",["3. Overall PTV","coverage acceptable?"],"gold"],
  ["targetedit",260,341,190,56,"box",["Review GTV / PTVhigh","objective thresholds"],"gold"],
  ["optimise",260,438,190,52,"box",["Re-optimise"],"gold"],
- ["spatial",10,446,208,82,"diamond",["Initial isodose review","No obvious issues?"],"gold"],
- ["review",260,544,190,55,"box",["Investigate / escalate"],"neutral"],
- ["intent",10,557,208,82,"diamond",["4. Achieve original","treatment intent?"],"gold"],
- ["rename",10,669,208,58,"box",["Rename candidate","FractionX_optimised"],"green"]
+ ["review",260,510,190,55,"box",["Investigate / escalate"],"neutral"],
+ ["intent",10,446,208,82,"diamond",["4. Achieve original","treatment intent?"],"gold"],
+ ["rename",10,557,208,58,"box",["Rename candidate","FractionX_optimised"],"green"]
  ];
  const edges=[
  ["max","oar","M114 70V99","",0,0],
@@ -65,17 +64,15 @@
  ["high","oaredit","M218 252H260","No",237,244],
  ["high","whole","M114 293V323","Yes",128,312],
  ["whole","targetedit","M218 369H260","No",237,360],
- ["whole","spatial","M114 415V446","Yes",128,435],
+ ["whole","intent","M114 415V446","Yes",128,435],
  ["oaredit","optimise","M450 252H466V464H450","",0,0],
  ["targetedit","optimise","M355 397V438","",0,0],
  ["optimise","repeat","M450 464H476V41H450","",0,0],
- ["spatial","review","M218 487H235V571H260","No",245,511],
- ["spatial","intent","M114 528V557","Yes",128,546],
- ["intent","review","M218 598H260","No / unsure",245,615],
- ["intent","rename","M114 639V669","Yes",128,658]
+ ["intent","review","M218 487H235V537H260","No / unsure",289,504],
+ ["intent","rename","M114 528V557","Yes",128,546]
  ];
  const colors={green:"#e0ecc7",gold:"#fff0c4",neutral:"#edf0f1"};
- let svg='<svg viewBox="0 0 485 741" role="img" aria-label="Operator 1 training workflow with current step highlighted"><defs><marker id="wfArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#73817c"/></marker><marker id="wfActiveArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#007b78"/></marker></defs>';
+ let svg='<svg viewBox="0 0 485 629" role="img" aria-label="Operator 1 training workflow with current step highlighted"><defs><marker id="wfArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#73817c"/></marker><marker id="wfActiveArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#007b78"/></marker></defs>';
  for(const [from,to,d,l,x,y] of edges){const highlight=from===active;svg+='<path d="'+d+'" fill="none" stroke="'+(highlight?"#007b78":"#73817c")+'" stroke-width="'+(highlight?2.3:1.2)+'" marker-end="url(#'+(highlight?"wfActiveArrow":"wfArrow")+')"/>';if(l)svg+='<text x="'+x+'" y="'+y+'" text-anchor="middle" class="wf-edge-label">'+l+'</text>'}
  for(const [id,x,y,w,h,shape,label,tone] of nodes){const isActive=id===active,seen=visited.has(id),fill=isActive?"#007b78":seen?"#d5e9df":colors[tone],stroke=isActive?"#005653":seen?"#47866c":"#819084",sw=isActive?3:seen?2:1.2;svg+='<g data-node="'+id+'" '+(isActive?'aria-current="step"':'')+'><title>'+esc(label.join(" · "))+(isActive?" — current step":"")+'</title>';
  svg+=shape==="diamond"?'<path d="M'+(x+w/2)+' '+y+'L'+(x+w)+' '+(y+h/2)+'L'+(x+w/2)+' '+(y+h)+'L'+x+' '+(y+h/2)+'Z" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'"/>':'<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="6" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'"/>';
@@ -83,7 +80,7 @@
  panel.innerHTML=svg+'</svg>';
  $("wfDiagramStatus").textContent="Current step: "+(nodes.find(n=>n[0]===active)?.[6].join(" — ")||"Review");
 }
- const order={max:-1,oar:0,oarAction:0,high:1,highAction:1,whole:2,wholeAction:2,limitedSpatial:2,editOar:-1,editTarget:-1,spatial:2,intent:3,rename:3,done:4};
+ const order={max:-1,oar:0,oarAction:0,high:1,highAction:1,whole:2,wholeAction:2,limitedSpatial:2,editOar:-1,editTarget:-1,intent:3,rename:3,done:4};
  function render(){
   const p=phase(),s=state();choices=[];let prompt="",hint="",finding="";
   switch(p){
@@ -117,10 +114,10 @@
    prompt="3 · Is overall PTV coverage good for this adapted plan?";hint="Check whole-PTV V100% against the >95% exercise aim. An OAR-limited compromise below aim needs contextual judgement rather than automatic rejection or acceptance.";
    if(C.compromise){
      hint="The ideal whole-PTV V100% aim is >95%. For this OAR-limited SABR exercise, >"+C.compromise.minimum+"% is usually acceptable provided mandatory OARs and PTVhigh are satisfactory. Judge today's plan before seeing baseline.";
-     add("Overall PTV coverage is acceptable for this plan",()=>wholeOK()?next("spatial",compromiseOK()&&!groupPass("whole")?"Acceptable OAR-limited PTV compromise":"Whole-PTV coverage achieves aim",compromiseOK()&&!groupPass("whole")?"Correct. SABR often requires a PTV coverage compromise to meet mandatory OAR limits. "+fmt(s.values[0],"%")+" is above the exercise floor; PTVhigh and OAR criteria are met. Review isodoses before comparing treatment intent.":"The adapted plan meets the displayed aims independently. Review isodoses next."):feedback("The coverage does not meet the contextual exercise criteria. Reassess and discuss with the team."));
+     add("Overall PTV coverage is acceptable for this plan",()=>wholeOK()?next("intent",compromiseOK()&&!groupPass("whole")?"Acceptable OAR-limited PTV compromise":"Whole-PTV coverage achieves aim",compromiseOK()&&!groupPass("whole")?"Correct. SABR often requires a PTV coverage compromise to meet mandatory OAR limits. "+fmt(s.values[0],"%")+" is above the exercise floor; PTVhigh and OAR criteria are met. The original plan is now available for treatment-intent assessment.":"The adapted plan meets the displayed aims independently. Compare treatment intent next."):feedback("The coverage does not meet the contextual exercise criteria. Reassess and discuss with the team."));
      add("Overall PTV coverage is not acceptable",()=>!wholeOK()?next("wholeAction","Whole-PTV coverage not acceptable","Consider further optimisation or escalation."):feedback("Do not treat the ideal 95% aim as a hard minimum for OAR-limited SABR. The displayed coverage can be acceptable on its own merits in this case."));
      add("Compare with the original before deciding",()=>feedback("The original is still locked. First judge the adapted plan independently."));
-   }else question("whole","Whole-PTV coverage achieves the exercise aim","Whole-PTV coverage is below the exercise aim",()=>next("spatial","Whole-PTV coverage achieves aim","The displayed numerical criteria are met independently. Review isodoses before comparing treatment intent."),()=>next("wholeAction","Whole-PTV coverage below aim","Assess whether further optimisation or an OAR-limited clinical review is appropriate."));break;
+   }else question("whole","Whole-PTV coverage achieves the exercise aim","Whole-PTV coverage is below the exercise aim",()=>next("intent","Whole-PTV coverage achieves aim","The displayed numerical criteria are met independently. Compare treatment intent next."),()=>next("wholeAction","Whole-PTV coverage below aim","Assess whether further optimisation or an OAR-limited clinical review is appropriate."));break;
   case "wholeAction":
    prompt="Whole-PTV coverage below aim · what next?";hint="For an OAR-limited plan with acceptable PTVhigh, the diagram allows initial isodose review. Assess the compromise on its own merits first.";
    if(s.targetEdit)add("Review GTV/PTVhigh decrease or increase objective thresholds, then re-optimise",()=>next("editTarget","Review target objective thresholds with responsible operator","Existing dose is unchanged until re-optimisation."));
@@ -131,11 +128,6 @@
    prompt="Initial isodose review · OAR-limited compromise";hint="A clinical judgement is needed; a below-aim result is not automatically unacceptable.";
    finding="Actual isodoses and an authorised assessment of this compromise are not available in this scripted exercise.";
    add("Document the compromise and request team review",()=>finish("escalation","Do not assume the compromise is good or reject it solely on the numerical aim. Seek contextual review."));break;
-  case "spatial":
-   prompt="Initial isodose review · any obvious issues?";hint="Review the location of cold dose and hotspots in actual practice. Here the finding is scripted, not a real dose map.";
-   finding=C.spatialIssue?"Scripted isodose finding: a suspicious high-dose region near the visceral OAR requires investigation, despite passing displayed metrics.":"Scripted isodose finding: no obvious issue identified. Actual isodoses are not displayed or verified.";
-   add("No obvious issue in the scripted finding",()=>C.spatialIssue?feedback("The scripted finding identifies a suspicious region; investigate it before proceeding."):next("intent","Initial scripted isodose review clear","Original plan comparison unlocked for treatment-intent assessment."));
-   add("Investigate the finding or seek further spatial review",()=>finish("escalation","Further spatial review is appropriate if there is unresolved concern."));break;
   case "intent":
    prompt="4 · Does this plan achieve the treatment intent of the original?";hint="Compare purpose and dose balance, not whether every metric is better. The original can have its own compromises.";
    finding="Fictional original treatment intent: "+C.intent+(C.compromise?" Adapted V100%: "+fmt(s.values[0],"%")+"; original V100%: "+fmt(C.reference[0],"%")+"; absolute difference: "+gap().toFixed(1)+" percentage points.":"");
