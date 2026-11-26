@@ -5,7 +5,10 @@
  const current=()=>route.at(-1),state=()=>C.states[current().id],phase=()=>current().phase;
  const meets=(v,r)=>r.op===">"?v>r.limit:r.op===">="?v>=r.limit-1e-9:v<=r.limit+1e-9;
  const groupPass=g=>R.every((r,i)=>r.group!==g||meets(state().values[i],r));
- const unlocked=()=>route.some(e=>e.phase==="intent")&&["intent","rename","done"].includes(phase())&&["max","oar","high","whole"].every(groupPass);
+ const compromiseOK=()=>!!C.compromise&&state().kind==="oar"&&["max","oar","high"].every(groupPass)&&state().values[0]>C.compromise.minimum&&meets(state().values[1],R[1]);
+ const wholeOK=()=>groupPass("whole")||compromiseOK();
+ const unlocked=()=>route.some(e=>e.phase==="intent")&&["intent","rename","done"].includes(phase())&&["max","oar","high"].every(groupPass)&&wholeOK();
+ const gap=()=>Math.abs(state().values[0]-C.reference[0]);
  const add=(label,fn)=>choices.push({label,fn});
  function advance(id,p,via,why){route.push({id,phase:p,via});message=why;selected=null;render()}
  function next(p,via,why){advance(current().id,p,via,why)}
@@ -13,12 +16,18 @@
  function finish(mode,t){completed=mode;next("done",mode==="candidate"?"Rename training candidate":"Escalate / seek team review",t)}
  function table(){
   const s=state(),show=unlocked()&&baseline,prior=previous?[...route.slice(0,-1)].reverse().find(e=>e.id!==current().id):null;
-  const cell=(v,r)=>'<td class="'+(meets(v,r)?"wf-pass":"wf-fail")+'">'+fmt(v,r.unit)+' <span class="wf-status">'+(meets(v,r)?"Met":"Not met")+'</span></td>';
+  const cell=(v,r,isCurrent=false)=>{
+   const belowIdeal=C.compromise&&r===R[0]&&!meets(v,r)&&v>C.compromise.minimum;
+   const accepted=belowIdeal&&isCurrent&&compromiseOK();
+   const cls=meets(v,r)?"wf-pass":belowIdeal?"wf-compromise":"wf-fail";
+   const label=meets(v,r)?"Met":accepted?"Acceptable OAR-limited compromise":belowIdeal?"Below ideal aim":"Not met";
+   return '<td class="'+cls+'">'+fmt(v,r.unit)+' <span class="wf-status">'+label+'</span></td>';
+  };
   let last="";const groups={max:"Maximum dose",oar:"1 · Mandatory OARs",high:"2 · PTVhigh",whole:"3 · Whole PTV"};
-  $("wfTable").innerHTML='<table><thead><tr><th>Structure</th><th>Metric</th><th>Exercise criterion</th><th>'+esc(s.name)+'</th>'+(prior?'<th>'+esc(C.states[prior.id].name)+'</th>':'')+(show?'<th>Original plan</th>':'')+'</tr></thead><tbody>'+[2,5,6,7,3,4,0,1].map(i=>{let r=R[i],h=r.group!==last?'<tr class="wf-group"><td colspan="'+(4+Number(!!prior)+Number(show))+'">'+groups[r.group]+'</td></tr>':"";last=r.group;return h+'<tr><td><button class="wf-row" data-row="'+i+'">'+esc(r.s)+'</button></td><td>'+esc(r.metric)+'</td><td>'+(r.op===">"?"&gt;":r.op===">="?"≥":"≤")+' '+fmt(r.limit,r.unit)+'</td>'+cell(s.values[i],r)+(prior?cell(C.states[prior.id].values[i],r):"")+(show?cell(C.reference[i],r):"")+'</tr>'}).join("")+'</tbody></table>';
+  $("wfTable").innerHTML='<table><thead><tr><th>Structure</th><th>Metric</th><th>Exercise criterion</th><th>'+esc(s.name)+'</th>'+(prior?'<th>'+esc(C.states[prior.id].name)+'</th>':'')+(show?'<th>Original plan</th>':'')+'</tr></thead><tbody>'+[2,5,6,7,3,4,0,1].map(i=>{let r=R[i],h=r.group!==last?'<tr class="wf-group"><td colspan="'+(4+Number(!!prior)+Number(show))+'">'+groups[r.group]+'</td></tr>':"";last=r.group;return h+'<tr><td><button class="wf-row" data-row="'+i+'">'+esc(r.s)+'</button></td><td>'+esc(r.metric)+'</td><td>'+(r.op===">"?"&gt;":r.op===">="?"≥":"≤")+' '+fmt(r.limit,r.unit)+(C.compromise&&i===0?' <span class="wf-status">Ideal aim; see compromise guidance</span>':'')+'</td>'+cell(s.values[i],r,true)+(prior?cell(C.states[prior.id].values[i],r):"")+(show?cell(C.reference[i],r):"")+'</tr>'}).join("")+'</tbody></table>';
   $("wfReference").disabled=!unlocked();$("wfReference").checked=show;$("wfBaselineStatus").textContent=unlocked()?"Original plan available for treatment-intent review.":"Original plan locked until the adapted plan has been assessed on its own merits.";
   $("wfPrevious").disabled=!route.slice(0,-1).some(e=>e.id!==current().id);
-  $("wfSummary").textContent="Assess the criteria in order, not as a total pass score.";
+  $("wfSummary").textContent=compromiseOK()&&!groupPass("whole")?"Mandatory OARs and PTVhigh met; whole-PTV coverage is above the OAR-limited SABR exercise floor, though below the ideal aim.":"Assess the criteria in order, not as a total pass score.";
   $("wfObjective").textContent=(s.objective||33)+" Gy · illustrative OAR objective"+(phase()==="editOar"?" (edit pending re-optimisation)":"");
   $("wfExplain").textContent=selected===null?"Select a structure to explain the metric.":R[selected].s+" · "+R[selected].metric+" — "+R[selected].why+" Current: "+fmt(s.values[selected],R[selected].unit)+".";
  }
@@ -26,6 +35,52 @@
   add(yes,()=>groupPass(g)?onYes():feedback("Not yet. At least one criterion in this group is unmet. Recheck the current adapted plan."));
   add(no,()=>!groupPass(g)?onNo():feedback("Recheck the displayed criteria in this group: they are met."));
  }
+ function diagram(){
+ const panel=$("wfDiagram");if(!panel)return;
+ const map={max:current().id==="start"?"max":"repeat",oar:"oar",oarAction:"limit",high:"high",highAction:"oaredit",editOar:"optimise",editTarget:"optimise",whole:"whole",wholeAction:"targetedit",limitedSpatial:"spatial",spatial:"spatial",intent:"intent",rename:"rename",done:completed==="candidate"?"rename":"review"};
+ const active=map[phase()],visited=new Set(route.map(e=>e.phase==="max"?(e.id==="start"?"max":"repeat"):map[e.phase]));
+ const nodes=[
+ ["max",10,12,208,58,"box",["Operator 1","Normalise to maximum dose"],"green"],
+ ["repeat",260,12,190,58,"box",["Normalise to","maximum dose"],"gold"],
+ ["oar",10,99,208,82,"diamond",["1. Mandatory OARs","within tolerance?"],"gold"],
+ ["limit",260,112,190,56,"box",["Normalise to limiting","OAR constraint"],"gold"],
+ ["high",10,211,208,82,"diamond",["2. PTVhigh V95%","acceptable?"],"gold"],
+ ["oaredit",260,224,190,56,"box",["Change settings to","reduce OAR dose"],"gold"],
+ ["whole",10,323,208,92,"diamond",["3. Overall PTV","coverage acceptable?"],"gold"],
+ ["targetedit",260,341,190,56,"box",["Review GTV / PTVhigh","objective thresholds"],"gold"],
+ ["optimise",260,438,190,52,"box",["Re-optimise"],"gold"],
+ ["spatial",10,446,208,82,"diamond",["Initial isodose review","No obvious issues?"],"gold"],
+ ["review",260,544,190,55,"box",["Investigate / escalate"],"neutral"],
+ ["intent",10,557,208,82,"diamond",["4. Achieve original","treatment intent?"],"gold"],
+ ["rename",10,669,208,58,"box",["Rename candidate","FractionX_optimised"],"green"]
+ ];
+ const edges=[
+ ["max","oar","M114 70V99","",0,0],
+ ["repeat","oar","M260 41H236V90H114V99","",0,0],
+ ["oar","limit","M218 140H260","No",237,131],
+ ["limit","oar","M355 168V195H235V140H218","Recheck",299,190],
+ ["oar","high","M114 181V211","Yes",128,200],
+ ["high","oaredit","M218 252H260","No",237,244],
+ ["high","whole","M114 293V323","Yes",128,312],
+ ["whole","targetedit","M218 369H260","No",237,360],
+ ["whole","spatial","M114 415V446","Yes",128,435],
+ ["oaredit","optimise","M450 252H466V464H450","",0,0],
+ ["targetedit","optimise","M355 397V438","",0,0],
+ ["optimise","repeat","M450 464H476V41H450","",0,0],
+ ["spatial","review","M218 487H235V571H260","No",245,511],
+ ["spatial","intent","M114 528V557","Yes",128,546],
+ ["intent","review","M218 598H260","No / unsure",245,615],
+ ["intent","rename","M114 639V669","Yes",128,658]
+ ];
+ const colors={green:"#e0ecc7",gold:"#fff0c4",neutral:"#edf0f1"};
+ let svg='<svg viewBox="0 0 485 741" role="img" aria-label="Operator 1 training workflow with current step highlighted"><defs><marker id="wfArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#73817c"/></marker><marker id="wfActiveArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#007b78"/></marker></defs>';
+ for(const [from,to,d,l,x,y] of edges){const highlight=from===active;svg+='<path d="'+d+'" fill="none" stroke="'+(highlight?"#007b78":"#73817c")+'" stroke-width="'+(highlight?2.3:1.2)+'" marker-end="url(#'+(highlight?"wfActiveArrow":"wfArrow")+')"/>';if(l)svg+='<text x="'+x+'" y="'+y+'" text-anchor="middle" class="wf-edge-label">'+l+'</text>'}
+ for(const [id,x,y,w,h,shape,label,tone] of nodes){const isActive=id===active,seen=visited.has(id),fill=isActive?"#007b78":seen?"#d5e9df":colors[tone],stroke=isActive?"#005653":seen?"#47866c":"#819084",sw=isActive?3:seen?2:1.2;svg+='<g data-node="'+id+'" '+(isActive?'aria-current="step"':'')+'><title>'+esc(label.join(" · "))+(isActive?" — current step":"")+'</title>';
+ svg+=shape==="diamond"?'<path d="M'+(x+w/2)+' '+y+'L'+(x+w)+' '+(y+h/2)+'L'+(x+w/2)+' '+(y+h)+'L'+x+' '+(y+h/2)+'Z" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'"/>':'<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="6" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+sw+'"/>';
+ svg+='<text x="'+(x+w/2)+'" y="'+(y+h/2-(label.length-1)*7+4)+'" text-anchor="middle" font-size="11.5" font-weight="'+(isActive?700:550)+'" fill="'+(isActive?"#fff":"#25362e")+'">'+label.map((l,i)=>'<tspan x="'+(x+w/2)+'" dy="'+(i?14:0)+'">'+esc(l)+'</tspan>').join("")+'</text></g>'}
+ panel.innerHTML=svg+'</svg>';
+ $("wfDiagramStatus").textContent="Current step: "+(nodes.find(n=>n[0]===active)?.[6].join(" — ")||"Review");
+}
  const order={max:-1,oar:0,oarAction:0,high:1,highAction:1,whole:2,wholeAction:2,limitedSpatial:2,editOar:-1,editTarget:-1,spatial:2,intent:3,rename:3,done:4};
  function render(){
   const p=phase(),s=state();choices=[];let prompt="",hint="",finding="";
@@ -58,7 +113,12 @@
    add("Use existing dose as if it reflected the change",()=>feedback("An objective is an instruction, not a measured dose. Re-optimise first."));break;
   case "whole":
    prompt="3 · Is overall PTV coverage good for this adapted plan?";hint="Check whole-PTV V100% against the >95% exercise aim. An OAR-limited compromise below aim needs contextual judgement rather than automatic rejection or acceptance.";
-   question("whole","Whole-PTV coverage achieves the exercise aim","Whole-PTV coverage is below the exercise aim",()=>next("spatial","Whole-PTV coverage achieves aim","The displayed numerical criteria are met independently. Review isodoses before comparing treatment intent."),()=>next("wholeAction","Whole-PTV coverage below aim","Assess whether further optimisation or an OAR-limited clinical review is appropriate."));break;
+   if(C.compromise){
+     hint="The ideal whole-PTV V100% aim is >95%. For this OAR-limited SABR exercise, >"+C.compromise.minimum+"% is usually acceptable provided mandatory OARs and PTVhigh are satisfactory. Judge today's plan before seeing baseline.";
+     add("Overall PTV coverage is acceptable for this plan",()=>wholeOK()?next("spatial",compromiseOK()&&!groupPass("whole")?"Acceptable OAR-limited PTV compromise":"Whole-PTV coverage achieves aim",compromiseOK()&&!groupPass("whole")?"Correct. SABR often requires a PTV coverage compromise to meet mandatory OAR limits. "+fmt(s.values[0],"%")+" is above the exercise floor; PTVhigh and OAR criteria are met. Review isodoses before comparing treatment intent.":"The adapted plan meets the displayed aims independently. Review isodoses next."):feedback("The coverage does not meet the contextual exercise criteria. Reassess and discuss with the team."));
+     add("Overall PTV coverage is not acceptable",()=>!wholeOK()?next("wholeAction","Whole-PTV coverage not acceptable","Consider further optimisation or escalation."):feedback("Do not treat the ideal 95% aim as a hard minimum for OAR-limited SABR. The displayed coverage can be acceptable on its own merits in this case."));
+     add("Compare with the original before deciding",()=>feedback("The original is still locked. First judge the adapted plan independently."));
+   }else question("whole","Whole-PTV coverage achieves the exercise aim","Whole-PTV coverage is below the exercise aim",()=>next("spatial","Whole-PTV coverage achieves aim","The displayed numerical criteria are met independently. Review isodoses before comparing treatment intent."),()=>next("wholeAction","Whole-PTV coverage below aim","Assess whether further optimisation or an OAR-limited clinical review is appropriate."));break;
   case "wholeAction":
    prompt="Whole-PTV coverage below aim · what next?";hint="For an OAR-limited plan with acceptable PTVhigh, the diagram allows initial isodose review. Assess the compromise on its own merits first.";
    if(s.targetEdit)add("Review GTV/PTVhigh decrease or increase objective thresholds, then re-optimise",()=>next("editTarget","Review target objective thresholds with responsible operator","Existing dose is unchanged until re-optimisation."));
@@ -76,8 +136,8 @@
    add("Investigate the finding or seek further spatial review",()=>finish("escalation","Further spatial review is appropriate if there is unresolved concern."));break;
   case "intent":
    prompt="4 · Does this plan achieve the treatment intent of the original?";hint="Compare purpose and dose balance, not whether every metric is better. The original can have its own compromises.";
-   finding="Fictional original treatment intent: "+C.intent;
-   add("Displayed dose balance is consistent with stated intent; document and continue candidate review",()=>next("rename","Treatment intent reviewed","The numerical balance is consistent with the stated intent in this exercise. This does not establish clinical approval."));
+   finding="Fictional original treatment intent: "+C.intent+(C.compromise?" Adapted V100%: "+fmt(s.values[0],"%")+"; original V100%: "+fmt(C.reference[0],"%")+"; absolute difference: "+gap().toFixed(1)+" percentage points.":"");
+   add("Displayed dose balance is consistent with stated intent; document and continue candidate review",()=>C.compromise&&gap()>C.compromise.baselineDifference?feedback("The whole-PTV coverage difference exceeds the "+C.compromise.baselineDifference+" percentage-point training heuristic. It does not prove a different intent, but requires contextual review rather than assuming equivalence."):next("rename","Treatment intent reviewed",C.compromise?"Correct. The adapted plan is acceptable on its own merits in this exercise and its V100% differs from baseline by only "+gap().toFixed(1)+" percentage points, within the "+C.compromise.baselineDifference+" percentage-point heuristic. This supports similar treatment intent, not clinical approval.":"The numerical balance is consistent with the stated intent in this exercise. This does not establish clinical approval."));
    add("Intent cannot be established from these data; seek review",()=>finish("escalation","Appropriate if more information is needed; actual spatial dose and clinical QA are not established here."));
    add("Require every metric to be better than the original",()=>feedback("Matching or exceeding every baseline number is not the same as achieving treatment intent."));break;
   case "rename":
@@ -93,7 +153,7 @@
   $("wfBack").disabled=route.length===1;$("wfTrail").innerHTML=route.map((e,i)=>'<li><button data-jump="'+i+'" '+(i===route.length-1?'aria-current="step"':'')+'>'+esc(e.via)+'</button><small>'+esc(C.states[e.id].name)+'</small></li>').join("");
   const at=order[p];$("wfSteps").innerHTML=steps.map((x,i)=>'<div class="wf-step '+(i===at?"wf-current":i<at&&p!=="done"?"wf-complete":"")+'"><b>'+(i+1)+'</b> '+esc(x)+(i===at?' <span>(current)</span>':'')+'</div>').join("");
   $("wfDebrief").hidden=p!=="done";if(p==="done")$("wfDebriefText").textContent=completed==="candidate"?"Training candidate named for further review. Discuss outstanding clinical checks.":"Escalation / further assessment recorded. Discuss unresolved adapted-plan requirements. No clinical approval has been given.";
-  table();
+  table();diagram();
  }
  function jump(i){if(i<0||i>=route.length)return;route=route.slice(0,i+1);if(phase()!=="done")completed="";selected=null;message="Returned to this step. Reassess before moving on.";render()}
  function reset(){route=[{id:"start",phase:"max",via:"Operator 1 starts with the fully re-optimised plan"}];completed="";message="";selected=null;baseline=true;$("wfNotes").value="";render()}
@@ -101,6 +161,6 @@
  $("wfTable").addEventListener("click",e=>{const b=e.target.closest("[data-row]");if(b){selected=Number(b.dataset.row);table()}});
  $("wfTrail").addEventListener("click",e=>{const b=e.target.closest("[data-jump]");if(b)jump(Number(b.dataset.jump))});
  $("wfBack").onclick=()=>jump(route.length-2);$("wfReset").onclick=reset;$("wfReference").onchange=e=>{if(unlocked()){baseline=e.target.checked;table()}};$("wfPrevious").onchange=e=>{previous=e.target.checked;table()};
- $("wfExport").onclick=()=>{const report=[C.title,"TRAINING ONLY — fictional scripted outcomes","Decision history:",...route.map((e,i)=>(i+1)+". "+e.via+" — "+C.states[e.id].name),"Disposition: "+completed,"Final displayed criteria:",...R.map((r,i)=>r.s+" "+r.metric+": "+fmt(state().values[i],r.unit)+" ("+(meets(state().values[i],r)?"met":"not met")+")"),"Original comparison accessed: "+(route.some(e=>e.phase==="intent")?"yes":"no"),"Team notes:",$("wfNotes").value].join("\n");const u=URL.createObjectURL(new Blob([report],{type:"text/plain"})),a=document.createElement("a");a.href=u;a.download=C.id+"-review.txt";a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)};
+ $("wfExport").onclick=()=>{const report=[C.title,"TRAINING ONLY — fictional scripted outcomes","Decision history:",...route.map((e,i)=>(i+1)+". "+e.via+" — "+C.states[e.id].name),"Disposition: "+completed,"Final displayed criteria:",...R.map((r,i)=>r.s+" "+r.metric+": "+fmt(state().values[i],r.unit)+" ("+(meets(state().values[i],r)?"met":C.compromise&&i===0&&compromiseOK()?"below ideal aim; acceptable OAR-limited compromise":"not met")+")"),"Original comparison accessed: "+(route.some(e=>e.phase==="intent")?"yes":"no"),"Team notes:",$("wfNotes").value].join("\n");const u=URL.createObjectURL(new Blob([report],{type:"text/plain"})),a=document.createElement("a");a.href=u;a.download=C.id+"-review.txt";a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)};
  render();
 })();
