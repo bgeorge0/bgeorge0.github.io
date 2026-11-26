@@ -24,12 +24,12 @@
    return '<td class="'+cls+'">'+fmt(v,r.unit)+' <span class="wf-status">'+label+'</span></td>';
   };
   let last="";const groups={max:"Maximum dose",oar:"1 · Mandatory OARs",high:"2 · PTVhigh",whole:"3 · Whole PTV"};
-  $("wfTable").innerHTML='<table><thead><tr><th>Structure</th><th>Metric</th><th>Exercise criterion</th><th>'+esc(s.name)+'</th>'+(prior?'<th>'+esc(C.states[prior.id].name)+'</th>':'')+(show?'<th>Original plan</th>':'')+'</tr></thead><tbody>'+[2,5,6,7,3,4,0,1].map(i=>{let r=R[i],h=r.group!==last?'<tr class="wf-group"><td colspan="'+(4+Number(!!prior)+Number(show))+'">'+groups[r.group]+'</td></tr>':"";last=r.group;return h+'<tr><td><button class="wf-row" data-row="'+i+'">'+esc(r.s)+'</button></td><td>'+esc(r.metric)+'</td><td>'+(r.op===">"?"&gt;":r.op===">="?"≥":"≤")+' '+fmt(r.limit,r.unit)+(C.compromise&&i===0?' <span class="wf-status">Ideal aim; see compromise guidance</span>':'')+'</td>'+cell(s.values[i],r,true)+(prior?cell(C.states[prior.id].values[i],r):"")+(show?cell(C.reference[i],r):"")+'</tr>'}).join("")+'</tbody></table>';
+  $("wfTable").innerHTML='<table><thead><tr><th>Structure</th><th>Metric</th><th>Exercise criterion</th><th>'+esc(s.name)+'</th>'+(prior?'<th>'+esc(C.states[prior.id].name)+'</th>':'')+(show?'<th>Original plan</th>':'')+'</tr></thead><tbody>'+[2,5,6,7,3,4,0,1].map(i=>{let r=R[i],h=r.group!==last?'<tr class="wf-group"><td colspan="'+(4+Number(!!prior)+Number(show))+'">'+groups[r.group]+'</td></tr>':"";last=r.group;return h+'<tr><td>'+(C.compact?esc(r.s):'<button class="wf-row" data-row="'+i+'">'+esc(r.s)+'</button>')+'</td><td>'+esc(r.metric)+'</td><td>'+(r.op===">"?"&gt;":r.op===">="?"≥":"≤")+' '+fmt(r.limit,r.unit)+(C.compromise&&i===0?' <span class="wf-status">Ideal aim; see compromise guidance</span>':'')+'</td>'+cell(s.values[i],r,true)+(prior?cell(C.states[prior.id].values[i],r):"")+(show?cell(C.reference[i],r):"")+'</tr>'}).join("")+'</tbody></table>';
   $("wfReference").disabled=!unlocked();$("wfReference").checked=show;$("wfBaselineStatus").textContent=unlocked()?"Original plan available for treatment-intent review.":"Original plan locked until the adapted plan has been assessed on its own merits.";
   $("wfPrevious").disabled=!route.slice(0,-1).some(e=>e.id!==current().id);
-  $("wfSummary").textContent=compromiseOK()&&!groupPass("whole")?"Mandatory OARs and PTVhigh met; whole-PTV coverage is above the OAR-limited SABR exercise floor, though below the ideal aim.":"Assess the criteria in order, not as a total pass score.";
-  $("wfObjective").textContent=(s.objective||33)+" Gy · illustrative OAR objective"+(phase()==="editOar"?" (edit pending re-optimisation)":"");
-  $("wfExplain").textContent=selected===null?"Select a structure to explain the metric.":R[selected].s+" · "+R[selected].metric+" — "+R[selected].why+" Current: "+fmt(s.values[selected],R[selected].unit)+".";
+  if($("wfSummary"))$("wfSummary").textContent=compromiseOK()&&!groupPass("whole")?"Mandatory OARs and PTVhigh met; whole-PTV coverage is above the OAR-limited SABR exercise floor, though below the ideal aim.":"Assess the criteria in order, not as a total pass score.";
+  if($("wfObjective"))$("wfObjective").textContent=(s.objective||33)+" Gy · illustrative OAR objective"+(phase()==="editOar"?" (edit pending re-optimisation)":"");
+  if($("wfExplain"))$("wfExplain").textContent=selected===null?"Select a structure to explain the metric.":R[selected].s+" · "+R[selected].metric+" — "+R[selected].why+" Current: "+fmt(s.values[selected],R[selected].unit)+".";
  }
  function question(g,yes,no,onYes,onNo){
   add(yes,()=>groupPass(g)?onYes():feedback("Not yet. At least one criterion in this group is unmet. Recheck the current adapted plan."));
@@ -147,11 +147,11 @@
   case "done":prompt="Team debrief";hint="Review the sequence of decisions and outstanding checks.";break;
   }
   $("wfStage").textContent=p==="done"&&completed==="candidate"?"FractionX_optimised · training candidate":s.name;
-  $("wfPrompt").textContent=prompt;$("wfHintText").textContent=hint;$("wfHint").open=false;$("wfFinding").hidden=!finding;$("wfFinding").textContent=finding;
+  $("wfPrompt").textContent=prompt;$("wfHintText").textContent=hint;$("wfHint").open=false;const showFinding=!(C.compact&&p==="intent");$("wfFinding").hidden=!finding||!showFinding;$("wfFinding").textContent=showFinding?finding:"";
   $("wfChoices").innerHTML=choices.map((c,i)=>'<button class="wf-choice" data-choice="'+i+'">'+esc(c.label)+'</button>').join("");
   $("wfFeedback").textContent=message||"Begin with the fully re-optimised candidate. Follow the workflow in order.";
   $("wfBack").disabled=route.length===1;$("wfTrail").innerHTML=route.map((e,i)=>'<li><button data-jump="'+i+'" '+(i===route.length-1?'aria-current="step"':'')+'>'+esc(e.via)+'</button><small>'+esc(C.states[e.id].name)+'</small></li>').join("");
-  const at=order[p];$("wfSteps").innerHTML=steps.map((x,i)=>'<div class="wf-step '+(i===at?"wf-current":i<at&&p!=="done"?"wf-complete":"")+'"><b>'+(i+1)+'</b> '+esc(x)+(i===at?' <span>(current)</span>':'')+'</div>').join("");
+  const at=order[p];if($("wfSteps"))$("wfSteps").innerHTML=steps.map((x,i)=>'<div class="wf-step '+(i===at?"wf-current":i<at&&p!=="done"?"wf-complete":"")+'"><b>'+(i+1)+'</b> '+esc(x)+(i===at?' <span>(current)</span>':'')+'</div>').join("");
   $("wfDebrief").hidden=p!=="done";if(p==="done")$("wfDebriefText").textContent=completed==="candidate"?"Training candidate named for further review. Discuss outstanding clinical checks.":"Escalation / further assessment recorded. Discuss unresolved adapted-plan requirements. No clinical approval has been given.";
   table();diagram();
  }
